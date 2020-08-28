@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, func
 
 from flask import Flask, jsonify
 
-
+import datetime as dt
 #################################################
 # Database Setup
 #################################################
@@ -40,29 +40,36 @@ def welcome():
     return (
         f"Available Routes:<br/>"
         f"/api/v1.0/precipitation<br/>"
-        f"/api/v1.0/station"
+        f"/api/v1.0/station<br/>"
+        f"/api/v1.0/date(start of range)<br/>"
+        f"/api/v1.0/date(start of range)/date(end of range)"
     )
 
 
 @app.route("/api/v1.0/precipitation")
-def names():
+def precip():
+
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
-    """Return a list of all prcp"""
-    # Query all measurements
-    results = session.query(measurement.prcp).all()
+    """Return a list of dictionaries containing last year prcp"""
+    final_day = session.query(measurement.date).order_by(measurement.date.desc()).first()
+    begin_day = dt.datetime.strptime(final_day[0], '%Y-%m-%d') - dt.timedelta(days=365)
+    results = session.query(measurement.date, measurement.prcp).\
+        filter(begin_day <= measurement.date).all()
 
     session.close()
 
-    # Convert list of tuples into normal list
-    # all_names = list(np.ravel(results))
+    yearlong = []
+    for date, prcp in results:
+        daily = {}
+        daily[date] = prcp
+        yearlong.append(daily)
 
-    # return jsonify(all_names)
-    return results
+    return jsonify(yearlong)
 
-@app.route("/api/v1.0/station")
-def passengers():
+@app.route("/api/v1.0/stations")
+def stations():
     # Create our session (link) from Python to the DB
     session = Session(engine)
 
@@ -72,17 +79,71 @@ def passengers():
 
     session.close()
 
-    # Create a dictionary from the row data and append to a list of all_passengers
-    # all_passengers = []
-    # for name, age, sex in results:
-    #     passenger_dict = {}
-    #     passenger_dict["name"] = name
-    #     passenger_dict["age"] = age
-    #     passenger_dict["sex"] = sex
-    #     all_passengers.append(passenger_dict)
+    all_names = list(np.ravel(results))
 
-    # return jsonify(all_passengers)
-    return results
+    return jsonify(all_names)
+
+@app.route("/api/v1.0/tobs")
+def tobs():
+
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
+
+    """Return a list of last year tobs"""
+    final_day = session.query(measurement.date).order_by(measurement.date.desc()).first()
+    begin_day = dt.datetime.strptime(final_day[0], '%Y-%m-%d') - dt.timedelta(days=365)
+    results = session.query(measurement.date, measurement.tobs).\
+        filter(measurement.station == 'USC00519281').\
+        filter(begin_day <= measurement.date).all()
+
+    session.close()
+
+    # Convert list of tuples into normal list
+    all_names = list(np.ravel(results))
+
+    return jsonify(all_names)
+
+@app.route("/api/v1.0/<start>")
+def start(start):
+
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
+
+    """Return min, avg, max after date"""
+    results = session.query(func.min(measurement.tobs),\
+                            func.avg(measurement.tobs),\
+                            func.max(measurement.tobs)).\
+                            filter(measurement.date > start).all()
+
+    session.close()
+
+    ret = [{'minimum temperature' : results[0][0]},\
+           {'average temperature' : results[0][1]},\
+           {'maximum temperature' : results[0][2]}]
+
+    return jsonify(ret)
+
+@app.route("/api/v1.0/<start>/<end>")
+def start_end(start, end):
+
+    # Create our session (link) from Python to the DB
+    session = Session(engine)
+
+    """Return min, avg, max between dates"""
+    results = session.query(func.min(measurement.tobs),\
+                            func.avg(measurement.tobs),\
+                            func.max(measurement.tobs)).\
+                            filter(measurement.date > start).\
+                            filter(measurement.date < end).all()
+
+    session.close()
+
+    ret = [{'minimum temperature' : results[0][0]},\
+           {'average temperature' : results[0][1]},\
+           {'maximum temperature' : results[0][2]}]
+
+    return jsonify(ret)
+
 
 if __name__ == '__main__':
     app.run(debug=True)
